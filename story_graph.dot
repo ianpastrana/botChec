@@ -1,0 +1,28 @@
+digraph  {
+0 [class="start active", fillcolor=green, fontsize=12, label=START, style=filled];
+1 [class="active dashed", fontsize=12, label=utter_saludo];
+2 [class="", fontsize=12, label=utter_pedir_cuenta];
+"-4" [class=ellipsis, label="..."];
+6 [class="", fontsize=12, label=alto_costo];
+"-5" [class=ellipsis, label="..."];
+8 [class="", fontsize=12, label=obtener_datos_usuario];
+"-6" [class=ellipsis, label="..."];
+10 [class="intent active", fillcolor=lightblue, label=hola, shape=rect, style=filled];
+11 [class=intent, fillcolor=lightblue, label="/solicitud_datos_cuenta", shape=rect, style=filled];
+12 [class=intent, fillcolor=lightblue, label="/reclamo_valor_factura", shape=rect, style=filled];
+13 [class=intent, fillcolor=lightblue, label="/reclamo_valor_factura\{\"numero_cuenta\":\ 101177242\}", shape=rect, style=filled];
+14 [class=intent, fillcolor=lightblue, label="/solicitud_datos_cuenta\{\"numero_cuenta\":\ 101177447\}", shape=rect, style=filled];
+0 -> 10  [class=active, key=0];
+1 -> 11  [class="", key=0];
+1 -> 12  [class="", key=0];
+1 -> 13  [class="", key=0];
+1 -> 14  [class="", key=0];
+2 -> "-4"  [class="", key=NONE, label=""];
+6 -> "-5"  [class="", key=NONE, label=""];
+8 -> "-6"  [class="", key=NONE, label=""];
+10 -> 1  [class=active, key=0];
+11 -> 2  [class="", key=0];
+12 -> 2  [class="", key=0];
+13 -> 6  [class="", key=0];
+14 -> 8  [class="", key=0];
+}
