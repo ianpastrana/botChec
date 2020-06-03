@@ -210,5 +210,8 @@
 - puse un [pqr](pqr) desde  la cuenta [10101010](numero_cuenta) y deseo saber su estado
 - me da informacion de [pqr](pqr) de la cuenta [10101010](numero_cuenta)
 
+## intent:solicitud_factura
+- me podría enviar una [copia](copia) de la factura
+
 ## regex:numero_cuenta
 - [0-9]{9}

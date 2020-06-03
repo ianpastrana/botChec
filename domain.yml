@@ -12,6 +12,7 @@ intents:
 - fecha_pago_factura
 - pagos_realizados
 - informacion_pqrs_interpuestos
+- solicitud_factura
 
 entities:
 - ubicacion
@@ -22,9 +23,12 @@ entities:
 - financiacion
 - pago
 - pqr
+- copia
 
 slots:
   ubicacion:
+    type: text
+  copia:
     type: text
   pqr:
     type: text
@@ -72,5 +76,7 @@ actions:
 - accion_financiacion_productos
 - accion_informacion_pagos
 - accion_informacion_pqrs
+- action_session_start
+- accion_solicitud_factura
 
 

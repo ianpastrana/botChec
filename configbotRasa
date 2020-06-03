@@ -1,0 +1,26 @@
+version: '3.4'
+services:
+  app:
+    image: rasa/rasa-sdk:latest
+    volumes: 
+      - ./actions:/app/actions
+    expose:
+      - 5055
+    depends_on:
+      - rasa-production
+
+
+
+version: '3.4'
+services:
+  rasa:
+    image: rasa/rasa-sdk:latest
+    ports:
+      - 5005:5005
+    volumes:
+      - ./:/app
+    command:
+      - run
+  app:
+    image: <image:tag>
+    expose: 5055

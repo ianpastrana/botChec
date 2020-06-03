@@ -33,18 +33,84 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-import zeep
+#import zeep
 import requests
 from rasa_sdk import Action, Tracker # Esto está definico en el archivo interfaces.py
 #from rasa_sdk.executor import CollectingDispatcher
 from rasa_sdk.events import SlotSet
 #from rasa_sdk.forms import formAction
+#from rasa.core.actions.action actions
 
-import pandas as pd
+#import pandas as pd
 import sys
 
+import requests
+from requests.auth import HTTPDigestAuth
+import json
+#import jwt
+from datetime import timezone
+import time
+import datetime
+from calendar import timegm
 
-from conexionWebService import  WebService
+
+class WebService:
+    """Crea un objeto que Consulra el WebService de Comercial"""
+    
+    def __init__(self):
+        self.credenciales = {"Username": "admin", "Password": "123456"}
+        self.getCuenta = ""
+        self.urlAutenticacion = "https://checaliadoscomerciales.chec.com.co/api/login/authenticate"
+        self.completarurl = "/GetId?id="
+        self.urlConsulta = "https://checaliadoscomerciales.chec.com.co/api/CupoTarjeta" #/GetId?id=107558968"
+        
+    def autenticacion(self):
+        """ solicita token de autenticacion para futuras transacciones 
+        
+        Args:
+            split (str): one of "train", "val", or "test"
+        """
+        solicitudAutenticacion = requests.post(self.urlAutenticacion, json = self.credenciales)
+        self.token = solicitudAutenticacion.json()
+            
+    def obtener_autenticacion(self):
+        """ retorna el token de autenticacion 
+            
+        Args: Ninguno
+        """
+        return self.token
+        
+    def solicitud(self, cuenta, tipoTransaccion):
+        """ Consulta la API con el fin de obtener un tipo de consulta 
+            
+        Args: 
+            cuenta (str): la cuenta a consultar
+            tipoTransaccion (str): el tipo de consulta a realizar
+        """
+        cuenta = cuenta.replace(" ", "")
+        print(cuenta)
+        sys.stdout.write(cuenta)
+        urlSolicitud =  "https://checaliadoscomerciales.chec.com.co/api/" + tipoTransaccion + "/GetId?id=" + cuenta
+        headers = {'Authorization' : self.token}
+        respuesta = requests.get(urlSolicitud, headers=headers)
+        return json.loads(respuesta.text)            
+             #= "https://checaliadoscomerciales.chec.com.co/api/CupoTarjeta/GetId?id=107558968"
+        
+ # from conexionWebService import  WebService
+
+class SolicitudFactura(Action):
+    
+        
+    def name(self):
+        return "accion_solicitud_factura"
+    
+    def run(self, dispatcher, tracker, domain):
+        numero_cuenta_usuario = tracker.get_slot('numero_cuenta')
+        urlCadena = "https://adminchecweb.cadenaportalgestion.com/PDF/Show?Id=" + str(numero_cuenta_usuario)
+        #https://adminchecweb.cadenaportalgestion.com/PDF/Show?Id=396789018
+        respuesta = requests.get(urlCadena)
+        dispatcher.utter_message(respuesta)
+        return [SlotSet("numero_cuenta", numero_cuenta_usuario)]
 
 
 class ObtenerDatosUsuario(Action):
@@ -156,12 +222,20 @@ class AltoCosto(Action):
         #if valor_factura:
         #    respuesta = "El valor facturado para el {} es de: {}".format(periodo, dfRespuesta['valor_$'].values)
         '''
-        respuesta = "Los datos de Costos asociados a la cuenta {} son:\n{}".format(numero_cuenta_usuario, consulta['Data'])
+        respuesta = "Los datos de Alto Costo asociados a la cuenta {} son:\n{}".format(numero_cuenta_usuario, consulta['Data'])
         dispatcher.utter_message(respuesta)
         return [SlotSet("numero_cuenta", numero_cuenta_usuario)] 
         
+def detalleUltimaFactura(consulta, descripcionConcepto, cuenta = False, conexion = False):
+    conceptosSimilares = []
+    for i in range(len(consulta)):
+        if consulta[i]['DescripcionConcepto'] == descripcionConcepto: 
+            conceptosSimilares.append((consulta[i]["Valor"], consulta[i]["SaldoAnterior"]))
+    return conceptosSimilares
+    
 
-        
+    
+      
 class ValorAPagar(Action):    
     
     def name(self):
@@ -180,18 +254,55 @@ class ValorAPagar(Action):
         consumo_KWH = None; valor_factura = None; Valor_tarifa = None; valor_a_CU = None
         
         numero_cuenta_usuario = tracker.get_slot('numero_cuenta')
-        #sys.stdout.write(numero_cuenta_usuario)
-        #print(numero_cuenta_usuario)
         conexion = WebService()
-        #print(conexion)
         conexion.autenticacion()
-        #sys.stdout.write(conexion.token)
         consulta = conexion.solicitud(numero_cuenta_usuario, "DetalleUltFactura")
-        if not consulta["IsOk"]:
+        if consulta["IsOk"]:
+            respuestaGeneral = ("A continuación se describen los conceptos facturados sobre la Cuenta de Energía {} " + 
+                        "para el último periodo facturado.\n\n").format(numero_cuenta_usuario)
+            
+            conceptoEnergia = detalleUltimaFactura(consulta['Data'], "CONSUMO ACTIVA")
+            #sys.stdout.write(str(type(valorEnergia)))
+            respuestaEnergia = ("CONCEPTO DE ENERGIA:\n" + 
+                                "- Valor por Consumo de Energía en el periodo anterior: ${}\n" + 
+                                "- Saldo anterior por energía: ${}\n").format(conceptoEnergia[0][0], conceptoEnergia[0][1])
+            respuestaSubsidio = ("- Valor Subsidiado por el Estado: ${}\n").format(detalleUltimaFactura(consulta['Data'], "SUBSIDIO")[0][0])
+            respuestaInteresMoraEnergia = ("- Mora sobre el Saldo de Energía de ${}: ${}\n\n").format(conceptoEnergia[0][1],
+                                                                                              detalleUltimaFactura(consulta['Data'], "INTERESES DE MORA")[0][0])
+            
+            respuesta = respuestaGeneral + respuestaEnergia + respuestaSubsidio + respuestaInteresMoraEnergia
+            dispatcher.utter_message(respuesta)
+            
+            # Productos Adicionales
+            conceptoCreditos = detalleUltimaFactura(consulta['Data'], "CUOTA PFS - TARJETA")
+            conceptoCreditosIntereses = detalleUltimaFactura(consulta['Data'], "INTERES FINANC PFS - TARJETA")
+            if conceptoCreditos:
+                if len(conceptoCreditos) == 1:
+                    pluralidadCreditos = "Cŕedito Activo"
+                else:
+                    pluralidadCreditos = "Cŕeditos Activos" 
+                cantidadCreditos = len(conceptoCreditos)
+                respuesta = ("CONCEPTO DE PRODUCTOS ADICIONALES A ENERGIA.\n" +
+                                "La Cuenta actualmente tiene {} " + pluralidadCreditos + 
+                                " con la CHEC. Los siguientes son los valores facturados: \n\n").format(cantidadCreditos)
+                for i in range(cantidadCreditos):
+                    respuesta = respuesta + ("Credito {} :\n" + 
+                                             "- Valor Cuota del Crédito : ${}\n" + 
+                                             "- Saldo anterior del Crédito: ${}\n" +  
+                                             "- Valor Intereses de Crédito: ${}\n" + 
+                                             "- Saldo Anterior de Intereses: ${}\n"
+                                            ).format(i+1, conceptoCreditos[i][0], 
+                                                     conceptoCreditos[i][1],
+                                                    conceptoCreditosIntereses[i][0],
+                                                    conceptoCreditosIntereses[i][0])
+            #respuesta = respuestaGeneral + respuestaEnergia
+        #sys.stdout.write(consulta['Data'][0])
+            #respuesta = "Los datos de Valor a Pagar asociados a la cuenta {} son:\n{}".format(numero_cuenta_usuario, respuesta)
+            dispatcher.utter_message(respuesta)
+        else:
             respuesta = "La Cuenta {} no tiena datos asociados".format(numero_cuenta_usuario)
-        
-        respuesta = "Los datos de Costos asociados a la cuenta {} son:\n{}".format(numero_cuenta_usuario, consulta['Data'])
-        dispatcher.utter_message(respuesta)
+            dispatcher.utter_message(respuesta)
+            
         return [SlotSet("numero_cuenta", numero_cuenta_usuario)] 
         
         
@@ -213,19 +324,41 @@ class FinanciacionProductos(Action):
         consumo_KWH = None; valor_factura = None; Valor_tarifa = None; valor_a_CU = None
         
         numero_cuenta_usuario = tracker.get_slot('numero_cuenta')
-        #sys.stdout.write(numero_cuenta_usuario)
-        #print(numero_cuenta_usuario)
         conexion = WebService()
-        #print(conexion)
         conexion.autenticacion()
-        #sys.stdout.write(conexion.token)
         consulta = conexion.solicitud(numero_cuenta_usuario, "Credito")
-        #sys.stdout.write(consulta)
-        #if not consulta["IsOk"]:
-         #   respuesta = "La Cuenta {} no tiena datos asociados".format(numero_cuenta_usuario)
-        
-        respuesta = "Los datos de Costos asociados a la cuenta {} son:\n{}".format(numero_cuenta_usuario, consulta['Data'])
-        dispatcher.utter_message(respuesta)
+        if consulta["IsOk"]:
+            cantidadCreditosActivos = 0
+            for credito in consulta['Data']:
+                if credito['Estado'] == 'Activo':
+                    cantidadCreditosActivos += 1
+            if cantidadCreditosActivos:
+                if cantidadCreditosActivos == 1:
+                    pluralidadCreditos = "Cŕedito Activo"
+                else:
+                    pluralidadCreditos = "Cŕeditos Activos"
+                respuesta = ("La cuenta de Energía {} tiene {} " + pluralidadCreditos).format(numero_cuenta_usuario, cantidadCreditosActivos)
+                dispatcher.utter_message(respuesta)
+                creditosActivos = 0
+                for credito in consulta['Data']:
+                    if credito['Estado'] == 'Activo':
+                        creditosActivos += 1
+                        respuesta = ("Crédito Número {} :\n\t" +
+                            "- Fecha del Crédito: {}\n\t" +  
+                            "- Valor del Crédito: {}\n\t" +
+                            "- Número de Cuotas: {}\n").format(creditosActivos, 
+                                                     credito['Fecha'],
+                                                     int(credito['Valor']),
+                                                     int(credito['NumeroCuotas'])
+                        )
+                        #sys.stdout.write(json.loads(credito))
+                        print(credito)
+                        dispatcher.utter_message(respuesta)
+                    else:
+                        respuesta = "No hay Créditos activos Asociados su cuenta {}".format(numero_cuenta_usuario)
+        else:
+            respuesta = "La Cuenta {} no tiena datos asociados".format(numero_cuenta_usuario)
+            dispatcher.utter_message(respuesta)
         return [SlotSet("numero_cuenta", numero_cuenta_usuario)]   
 
 class InformacionPagos(Action):    
@@ -257,7 +390,7 @@ class InformacionPagos(Action):
         #if not consulta["IsOk"]:
          #   respuesta = "La Cuenta {} no tiena datos asociados".format(numero_cuenta_usuario)
         
-        respuesta = "Los datos de Costos asociados a la cuenta {} son:\n{}".format(numero_cuenta_usuario, consulta['Data'])
+        respuesta = "Los datos de Informacion de Pagos asociados a la cuenta {} son:\n{}".format(numero_cuenta_usuario, consulta['Data'])
         dispatcher.utter_message(respuesta)
         return [SlotSet("numero_cuenta", numero_cuenta_usuario)]    
     
@@ -290,7 +423,7 @@ class InformacionPqrs(Action):
         #if not consulta["IsOk"]:
          #   respuesta = "La Cuenta {} no tiena datos asociados".format(numero_cuenta_usuario)
         
-        respuesta = "Los datos de Costos asociados a la cuenta {} son:\n{}".format(numero_cuenta_usuario, consulta['Data'])
+        respuesta = "Los datos de PQRs asociados a la cuenta {} son:\n{}".format(numero_cuenta_usuario, consulta['Data'])
         dispatcher.utter_message(respuesta)
         return [SlotSet("numero_cuenta", numero_cuenta_usuario)] 
     
